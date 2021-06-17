@@ -1,7 +1,7 @@
-var express = require('express');
-var router = express.Router();
-var _ = require('lodash');
-var common = require('./common');
+const express = require('express');
+const router = express.Router();
+const _ = require('lodash');
+const common = require('./common');
 
 // runs on all routes and checks password if one is setup
 router.all('/*', common.checkLogin, function (req, res, next){
@@ -20,24 +20,23 @@ router.all('/app/*', common.checkLogin, function (req, res, next){
 
 // the home route
 router.get('/app/', function (req, res, next){
-    var connection_list = req.nconf.connections.get('connections');
+    const connection_list = req.nconf.connections.get('connections');
 
     if(connection_list){
         if(Object.keys(connection_list).length > 0){
             // we have a connection and redirect to the first
-            var first_conn = Object.keys(connection_list)[0];
+            const first_conn = Object.keys(connection_list)[0];
             res.redirect(req.app_context + '/app/' + first_conn);
             return;
         }
     }
     // if no connections, go to connection setup
     res.redirect(req.app_context + '/app/connection_list');
-    return;
 });
 
 // login page
 router.get('/app/login', function (req, res, next){
-    var passwordConf = req.nconf.app.get('app');
+    const passwordConf = req.nconf.app.get('app');
 
     // if password is set then render the login page, else continue
     if(passwordConf && passwordConf.hasOwnProperty('password')){
@@ -58,7 +57,7 @@ router.get('/app/logout', function (req, res, next){
 
 // login page
 router.post('/app/login_action', function (req, res, next){
-    var passwordConf = req.nconf.app.get('app');
+    const passwordConf = req.nconf.app.get('app');
 
     if(passwordConf && passwordConf.hasOwnProperty('password')){
         if(req.body.inputPassword === passwordConf.password){
@@ -79,7 +78,7 @@ router.post('/app/login_action', function (req, res, next){
 
 // Show/manage connections
 router.get('/app/connection_list', function (req, res, next){
-    var connection_list = req.nconf.connections.get('connections');
+    const connection_list = req.nconf.connections.get('connections');
 
     res.render('connections', {
         message: '',
@@ -91,8 +90,8 @@ router.get('/app/connection_list', function (req, res, next){
 
 // Show server monitoring
 router.get('/app/monitoring/:conn/', function (req, res, next){
-    var monitoringMessage = '';
-    var monitoringRequired = true;
+    let monitoringMessage = '';
+    let monitoringRequired = true;
     if(req.nconf.app.get('app:monitoring') === false){
         monitoringRequired = false;
         monitoringMessage = 'Monitoring has been switched off in the config. Please enable or remove if you want this feature.';
@@ -108,8 +107,8 @@ router.get('/app/monitoring/:conn/', function (req, res, next){
 
 // The base connection route showing all DB's for connection
 router.get('/app/:conn', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
-    var MongoURI = require('mongo-uri');
+    const connection_list = req.app.locals.dbConnections;
+    const MongoURI = require('mongo-uri');
 
     // if no connection found
     if(!connection_list || Object.keys(connection_list).length === 0){
@@ -124,8 +123,8 @@ router.get('/app/:conn', function (req, res, next){
     }
 
     // parse the connection string to get DB
-    var conn_string = connection_list[req.params.conn].connString;
-    var uri = MongoURI.parse(conn_string);
+    const conn_string = connection_list[req.params.conn].connString;
+    const uri = MongoURI.parse(conn_string);
 
     // If there is a DB in the connection string, we redirect to the DB level
     if(uri.database){
@@ -134,11 +133,13 @@ router.get('/app/:conn', function (req, res, next){
     }
 
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native;
-
+    const mongo_db = connection_list[req.params.conn];
+    console.log('uri');
     common.get_db_status(mongo_db, function (err, db_status){
+        console.log('1st pass');
         common.get_backups(function(err, backup_list){
             common.get_db_stats(mongo_db, uri.database, function (err, db_stats){
+                console.log('2nd pass');
                 common.get_sidebar_list(mongo_db, uri.database, function (err, sidebar_list){
                     common.get_db_list(uri, mongo_db, function (err, db_list){
                         res.render('conn', {
@@ -161,7 +162,7 @@ router.get('/app/:conn', function (req, res, next){
 
 // The base route at the DB level showing all collections for DB
 router.get('/app/:conn/:db', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
+    const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -175,13 +176,12 @@ router.get('/app/:conn/:db', function (req, res, next){
         return;
     }
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
-
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
     // do DB stuff
     common.get_db_stats(mongo_db, req.params.db, function (err, db_stats){
         common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-            mongo_db.command({usersInfo: 1}, function (err, conn_users){
-                mongo_db.listCollections().toArray(function (err, collection_list){
+            mongo_db.db(req.params.db).command({usersInfo: 1}, function (err, conn_users){
+                mongo_db.db(req.params.db).listCollections().toArray(function (err, collection_list){
                     res.render('db', {
                         conn_name: req.params.conn,
                         conn_list: common.order_object(connection_list),
@@ -212,8 +212,8 @@ router.get('/app/:conn/:db/:coll/view/', function (req, res, next){
 
 // Shows the document preview/pagination
 router.get('/app/:conn/:db/:coll/view/:page_num', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
-    var docs_per_page = 5;
+    const connection_list = req.app.locals.dbConnections;
+    const docs_per_page = 5;
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -228,7 +228,7 @@ router.get('/app/:conn/:db/:coll/view/:page_num', function (req, res, next){
     }
 
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
 
     // do DB stuff
     mongo_db.listCollections().toArray(function (err, collection_list){
@@ -263,7 +263,7 @@ router.get('/app/:conn/:db/:coll/view/:page_num', function (req, res, next){
 
 // Show all indexes for collection
 router.get('/app/:conn/:db/:coll/indexes', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
+    const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -278,7 +278,7 @@ router.get('/app/:conn/:db/:coll/indexes', function (req, res, next){
     }
 
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
 
     // do DB stuff
     mongo_db.listCollections().toArray(function (err, collection_list){
@@ -309,7 +309,7 @@ router.get('/app/:conn/:db/:coll/indexes', function (req, res, next){
 
 // New document view
 router.get('/app/:conn/:db/:coll/new', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
+    const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -324,7 +324,7 @@ router.get('/app/:conn/:db/:coll/new', function (req, res, next){
     }
 
     // Get DB form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
 
     // do DB stuff
     mongo_db.listCollections().toArray(function (err, collection_list){
@@ -352,8 +352,8 @@ router.get('/app/:conn/:db/:coll/new', function (req, res, next){
 
 // Shows the document preview/pagination
 router.get('/app/:conn/:db/:coll/:id', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
-    var docs_per_page = 5;
+    const connection_list = req.app.locals.dbConnections;
+    const docs_per_page = 5;
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -368,7 +368,7 @@ router.get('/app/:conn/:db/:coll/:id', function (req, res, next){
     }
 
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
 
     // do DB stuff
     mongo_db.listCollections().toArray(function (err, collection_list){
@@ -403,8 +403,8 @@ router.get('/app/:conn/:db/:coll/:id', function (req, res, next){
 
 // Shows document editor
 router.get('/app/:conn/:db/:coll/edit/:doc_id', function (req, res, next){
-    var connection_list = req.app.locals.dbConnections;
-    var bsonify = require('./bsonify');
+    const connection_list = req.app.locals.dbConnections;
+    const bsonify = require('./bsonify');
 
     // Check for existance of connection
     if(connection_list[req.params.conn] === undefined){
@@ -419,7 +419,7 @@ router.get('/app/:conn/:db/:coll/edit/:doc_id', function (req, res, next){
     }
 
     // Get DB's form pool
-    var mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
 
     // do DB stuff
     common.get_sidebar_list(mongo_db, req.params.db, function(err, sidebar_list){
@@ -435,29 +435,29 @@ router.get('/app/:conn/:db/:coll/edit/:doc_id', function (req, res, next){
                 return;
             }
 
-            var images = [];
+            const images = [];
             _.forOwn(result.doc, function (value, key){
                 if(value){
                     if(value.toString().substring(0, 10) === 'data:image'){
-                        images.push({'field': key, 'src': value});
+                        images.push({field: key, src: value});
                     }
                 }
             });
 
-            var videos = [];
+            const videos = [];
             _.forOwn(result.doc, function (value, key){
                 if(value){
                     if(value.toString().substring(0, 10) === 'data:video'){
-                        videos.push({'field': key, 'src': value, 'type': value.split(';')[0].replace('data:', '')});
+                        videos.push({field: key, src: value, type: value.split(';')[0].replace('data:', '')});
                     }
                 }
             });
 
-            var audio = [];
+            const audio = [];
             _.forOwn(result.doc, function (value, key){
                 if(value){
                     if(value.toString().substring(0, 10) === 'data:audio'){
-                        audio.push({'field': key, 'src': value});
+                        audio.push({field: key, src: value});
                     }
                 }
             });

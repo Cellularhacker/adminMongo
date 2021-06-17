@@ -1,9 +1,9 @@
-var _ = require('lodash');
+const _ = require('lodash');
 
 // Removes old monitoring data. We only want basic monitoring with the last 100 events.
 // We keep last 80 and remove the rest to be sure.
 function serverMonitoringCleanup(db, conn){
-    var exclude = {
+    const exclude = {
         eventDate: 0,
         pid: 0,
         version: 0,
@@ -16,20 +16,20 @@ function serverMonitoringCleanup(db, conn){
         docCounts: 0
     };
 
-    var retainedRecords = (24 * 60) * 60 / 30; // 24 hours worth of 30 sec blocks (data refresh interval)
+    const retainedRecords = (24 * 60) * 60 / 30; // 24 hours worth of 30 sec blocks (data refresh interval)
 
     db.find({connectionName: conn}).skip(retainedRecords).sort({eventDate: -1}).projection(exclude).exec(function (err, serverEvents){
-        var idArray = [];
+        const idArray = [];
         _.each(serverEvents, function(value, key){
             idArray.push(value._id);
         });
 
-        db.remove({'_id': {'$in': idArray}}, {multi: true}, function (err, newDoc){});
+        db.remove({_id: {$in: idArray}}, {multi: true}, function (err, newDoc){});
     });
 };
 
 // runs a regular job against the connections and inserts into a local DB
-var currDocCounts = {
+const currDocCounts = {
     queried: 0,
     inserted: 0,
     deleted: 0,
@@ -39,22 +39,22 @@ var currDocCounts = {
 exports.serverMonitoring = function (monitoringDB, dbs){
     if(dbs){
         Object.keys(dbs).forEach(function(key){
-            var adminDb = dbs[key].native.admin();
-            adminDb.serverStatus(function(err, info){
+            const adminDb = dbs[key].native.db('admin').admin();
+            adminDb.serverStatus({}, function(err, info){
                 // if we got data back from db. If not, normally related to permissions
-                var dataRetrieved = false;
+                let dataRetrieved = false;
                 if(info){
                     dataRetrieved = true;
                 }
 
                 // doc numbers. We get the last interval number and subtract the current to get the diff
-                var docCounts = '';
-                var activeClients = '';
-                var pid = 'N/A';
-                var version = 'N/A';
-                var uptime = 'N/A';
-                var connections = '';
-                var memory = '';
+                let docCounts = '';
+                let activeClients = '';
+                let pid = 'N/A';
+                let version = 'N/A';
+                let uptime = 'N/A';
+                let connections = '';
+                let memory = '';
 
                 // set the values if we can get them
                 if(info){
@@ -67,7 +67,7 @@ exports.serverMonitoring = function (monitoringDB, dbs){
                     memory = info.mem;
                 }
 
-                var doc = {
+                const doc = {
                     eventDate: new Date(),
                     pid: pid,
                     version: version,
@@ -91,7 +91,7 @@ exports.serverMonitoring = function (monitoringDB, dbs){
 };
 
 function getDocCounts(currCounts, newCounts){
-    var newDocCounts = {
+    const newDocCounts = {
         queried: 0,
         inserted: 0,
         deleted: 0,
