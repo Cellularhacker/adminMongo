@@ -5,6 +5,7 @@ releases/
 .env.*
 .idea/
 .idea
+config/*
 
 
 ### Node ###
