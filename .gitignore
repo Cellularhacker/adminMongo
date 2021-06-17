@@ -2,6 +2,9 @@ config/
 data/
 node_modules/
 releases/
+.env.*
+.idea/
+.idea
 
 
 ### Node ###
