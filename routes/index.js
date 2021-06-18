@@ -9,7 +9,7 @@ router.all('/*', common.checkLogin, function (req, res, next){
 });
 
 // redirect to "/app" on home route
-router.all('/', common.checkLogin, function (req, res, next){
+router.all('/', common.checkLogin, function (req, res){
     res.redirect(req.app_context + '/app/');
 });
 
@@ -19,7 +19,7 @@ router.all('/app/*', common.checkLogin, function (req, res, next){
 });
 
 // the home route
-router.get('/app/', function (req, res, next){
+router.get('/app/', function (req, res){
     const connection_list = req.nconf.connections.get('connections');
 
     if(connection_list){
@@ -35,11 +35,11 @@ router.get('/app/', function (req, res, next){
 });
 
 // login page
-router.get('/app/login', function (req, res, next){
+router.get('/app/login', function (req, res){
     const passwordConf = req.nconf.app.get('app');
 
     // if password is set then render the login page, else continue
-    if(passwordConf && passwordConf.hasOwnProperty('password')){
+    if(passwordConf && passwordConf.password){
         res.render('login', {
             message: '',
             helpers: req.handlebars.helpers
@@ -50,16 +50,16 @@ router.get('/app/login', function (req, res, next){
 });
 
 // logout
-router.get('/app/logout', function (req, res, next){
+router.get('/app/logout', function (req, res){
     req.session.loggedIn = null;
     res.redirect(req.app_context + '/app');
 });
 
 // login page
-router.post('/app/login_action', function (req, res, next){
+router.post('/app/login_action', function (req, res){
     const passwordConf = req.nconf.app.get('app');
 
-    if(passwordConf && passwordConf.hasOwnProperty('password')){
+    if(passwordConf && passwordConf.password){
         if(req.body.inputPassword === passwordConf.password){
             // password is ok, go to home
             req.session.loggedIn = true;
@@ -77,7 +77,7 @@ router.post('/app/login_action', function (req, res, next){
 });
 
 // Show/manage connections
-router.get('/app/connection_list', function (req, res, next){
+router.get('/app/connection_list', function (req, res){
     const connection_list = req.nconf.connections.get('connections');
 
     res.render('connections', {
@@ -89,7 +89,7 @@ router.get('/app/connection_list', function (req, res, next){
 });
 
 // Show server monitoring
-router.get('/app/monitoring/:conn/', function (req, res, next){
+router.get('/app/monitoring/:conn/', function (req, res){
     let monitoringMessage = '';
     let monitoringRequired = true;
     if(req.nconf.app.get('app:monitoring') === false){
@@ -106,7 +106,7 @@ router.get('/app/monitoring/:conn/', function (req, res, next){
 });
 
 // The base connection route showing all DB's for connection
-router.get('/app/:conn', function (req, res, next){
+router.get('/app/:conn', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
     const MongoURI = require('mongo-uri');
 
@@ -134,34 +134,26 @@ router.get('/app/:conn', function (req, res, next){
 
     // Get DB's form pool
     const mongo_db = connection_list[req.params.conn];
-    console.log('uri');
-    common.get_db_status(mongo_db, function (err, db_status){
-        console.log('1st pass');
-        common.get_backups(function(err, backup_list){
-            common.get_db_stats(mongo_db, uri.database, function (err, db_stats){
-                console.log('2nd pass');
-                common.get_sidebar_list(mongo_db, uri.database, function (err, sidebar_list){
-                    common.get_db_list(uri, mongo_db, function (err, db_list){
-                        res.render('conn', {
-                            conn_list: common.order_object(connection_list),
-                            db_stats: db_stats,
-                            db_status: db_status,
-                            conn_name: req.params.conn,
-                            sidebar_list: sidebar_list,
-                            db_list: db_list,
-                            backup_list: backup_list,
-                            helpers: req.handlebars.helpers,
-                            session: req.session
-                        });
-                    });
-                });
-            });
-        });
+    const dbStatus = await common.get_db_status(mongo_db);
+    const backupList = await common.get_backups();
+    const dbStats = await common.get_db_stats(mongo_db, uri.database);
+    const sidebarList = await common.get_sidebar_list(mongo_db, uri.database);
+    const dbList = common.get_db_list(uri, mongo_db);
+    res.render('conn', {
+        conn_list: common.order_object(connection_list),
+        db_stats: dbStats,
+        db_status: dbStatus,
+        conn_name: req.params.conn,
+        sidebar_list: sidebarList,
+        db_list: dbList,
+        backup_list: backupList,
+        helpers: req.handlebars.helpers,
+        session: req.session
     });
 });
 
 // The base route at the DB level showing all collections for DB
-router.get('/app/:conn/:db', function (req, res, next){
+router.get('/app/:conn/:db', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
@@ -178,40 +170,37 @@ router.get('/app/:conn/:db', function (req, res, next){
     // Get DB's form pool
     const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
     // do DB stuff
-    common.get_db_stats(mongo_db, req.params.db, function (err, db_stats){
-        common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-            mongo_db.db(req.params.db).command({usersInfo: 1}, function (err, conn_users){
-                mongo_db.db(req.params.db).listCollections().toArray(function (err, collection_list){
-                    res.render('db', {
-                        conn_name: req.params.conn,
-                        conn_list: common.order_object(connection_list),
-                        db_stats: db_stats,
-                        conn_users: conn_users,
-                        coll_list: common.cleanCollections(collection_list),
-                        db_name: req.params.db,
-                        show_db_name: true,
-                        sidebar_list: sidebar_list,
-                        helpers: req.handlebars.helpers,
-                        session: req.session
-                    });
-                });
-            });
-        });
+    const db_stats = await common.get_db_stats(mongo_db, req.params.db);
+    const sidebar_list = await common.get_sidebar_list(mongo_db, req.params.db);
+    const conn_users = await mongo_db.db(req.params.db).command({usersInfo: 1});
+    const collection_list = await mongo_db.db(req.params.db).listCollections;
+
+    res.render('db', {
+        conn_name: req.params.conn,
+        conn_list: common.order_object(connection_list),
+        db_stats: db_stats,
+        conn_users: conn_users,
+        coll_list: common.cleanCollections(collection_list),
+        db_name: req.params.db,
+        show_db_name: true,
+        sidebar_list: sidebar_list,
+        helpers: req.handlebars.helpers,
+        session: req.session
     });
 });
 
 // Pagination redirect to page 1
-router.get('/app/:conn/:db/:coll/', function (req, res, next){
+router.get('/app/:conn/:db/:coll/', function (req, res){
     res.redirect(req.app_context + '/app/' + req.params.conn + '/' + req.params.db + '/' + req.params.coll + '/view/1');
 });
 
 // Pagination redirect to page 1
-router.get('/app/:conn/:db/:coll/view/', function (req, res, next){
+router.get('/app/:conn/:db/:coll/view/', function (req, res){
     res.redirect(req.app_context + '/app/' + req.params.conn + '/' + req.params.db + '/' + req.params.coll + '/view/1');
 });
 
 // Shows the document preview/pagination
-router.get('/app/:conn/:db/:coll/view/:page_num', function (req, res, next){
+router.get('/app/:conn/:db/:coll/view/:page_num', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
     const docs_per_page = 5;
 
@@ -228,41 +217,40 @@ router.get('/app/:conn/:db/:coll/view/:page_num', function (req, res, next){
     }
 
     // Get DB's form pool
-    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
 
     // do DB stuff
-    mongo_db.listCollections().toArray(function (err, collection_list){
-        // clean up the collection list
-        collection_list = common.cleanCollections(collection_list);
-        common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-            mongo_db.db(req.params.db).collection(req.params.coll).count(function (err, coll_count){
-                if(collection_list.indexOf(req.params.coll) === -1){
-                    common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
-                }else{
-                    res.render('coll-view', {
-                        conn_list: common.order_object(req.nconf.connections.get('connections')),
-                        conn_name: req.params.conn,
-                        db_name: req.params.db,
-                        coll_name: req.params.coll,
-                        coll_count: coll_count,
-                        page_num: req.params.page_num,
-                        key_val: req.params.key_val,
-                        value_val: req.params.value_val,
-                        sidebar_list: sidebar_list,
-                        docs_per_page: docs_per_page,
-                        helpers: req.handlebars.helpers,
-                        paginate: true,
-                        editor: true,
-                        session: req.session
-                    });
-                }
-            });
-        });
+    // clean up the collection list
+    const collection_list = common.cleanCollections(await mongo_db.db(req.params.db).listCollections().toArray());
+    const sidebar_list = await common.get_sidebar_list(mongo_db, req.params.db);
+    const coll_count = await mongo_db.db(req.params.db).collection(req.params.coll).count();
+
+    // MARK: When requested Collection name is not exists on the selected DB.
+    if(collection_list.indexOf(req.params.coll) < 0){
+        common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
+        return;
+    }
+
+    res.render('coll-view', {
+        conn_list: common.order_object(req.nconf.connections.get('connections')),
+        conn_name: req.params.conn,
+        db_name: req.params.db,
+        coll_name: req.params.coll,
+        coll_count: coll_count,
+        page_num: req.params.page_num,
+        key_val: req.params.key_val,
+        value_val: req.params.value_val,
+        sidebar_list: sidebar_list,
+        docs_per_page: docs_per_page,
+        helpers: req.handlebars.helpers,
+        paginate: true,
+        editor: true,
+        session: req.session
     });
 });
 
 // Show all indexes for collection
-router.get('/app/:conn/:db/:coll/indexes', function (req, res, next){
+router.get('/app/:conn/:db/:coll/indexes', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
@@ -278,37 +266,34 @@ router.get('/app/:conn/:db/:coll/indexes', function (req, res, next){
     }
 
     // Get DB's form pool
-    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
 
     // do DB stuff
-    mongo_db.listCollections().toArray(function (err, collection_list){
-        // clean up the collection list
-        collection_list = common.cleanCollections(collection_list);
-        mongo_db.collection(req.params.coll).indexes(function (err, coll_indexes){
-            common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-                if(collection_list.indexOf(req.params.coll) === -1){
-                    console.error('No collection found');
-                    common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
-                }else{
-                    res.render('coll-indexes', {
-                        coll_indexes: coll_indexes,
-                        conn_list: common.order_object(connection_list),
-                        conn_name: req.params.conn,
-                        db_name: req.params.db,
-                        coll_name: req.params.coll,
-                        sidebar_list: sidebar_list,
-                        helpers: req.handlebars.helpers,
-                        editor: true,
-                        session: req.session
-                    });
-                }
-            });
-        });
+    // clean up the collection list
+    const collection_list = common.cleanCollections(await mongo_db.db(req.params.db).listCollections().toArray());
+    const coll_indexes = await mongo_db.collection(req.params.coll).indexes();
+    const sidebar_list = await common.get_sidebar_list(mongo_db, req.params.db);
+    if(collection_list.indexOf(req.params.coll) < 0){
+        console.error('No collection found');
+        common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
+        return;
+    }
+
+    res.render('coll-indexes', {
+        coll_indexes: coll_indexes,
+        conn_list: common.order_object(connection_list),
+        conn_name: req.params.conn,
+        db_name: req.params.db,
+        coll_name: req.params.coll,
+        sidebar_list: sidebar_list,
+        helpers: req.handlebars.helpers,
+        editor: true,
+        session: req.session
     });
 });
 
 // New document view
-router.get('/app/:conn/:db/:coll/new', function (req, res, next){
+router.get('/app/:conn/:db/:coll/new', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
 
     // Check for existance of connection
@@ -324,34 +309,32 @@ router.get('/app/:conn/:db/:coll/new', function (req, res, next){
     }
 
     // Get DB form pool
-    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
 
     // do DB stuff
-    mongo_db.listCollections().toArray(function (err, collection_list){
-        // clean up the collection list
-        collection_list = common.cleanCollections(collection_list);
-        common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-            if(collection_list.indexOf(req.params.coll) === -1){
-                console.error('No collection found');
-                common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
-            }else{
-                res.render('coll-new', {
-                    conn_name: req.params.conn,
-                    conn_list: common.order_object(connection_list),
-                    coll_name: req.params.coll,
-                    sidebar_list: sidebar_list,
-                    db_name: req.params.db,
-                    helpers: req.handlebars.helpers,
-                    editor: true,
-                    session: req.session
-                });
-            }
-        });
+    // clean up the collection list
+
+    const collection_list = common.cleanCollections(await mongo_db.db(req.params.db).listCollections().toArray());
+    const sidebar_list = common.get_sidebar_list(mongo_db, req.params.db);
+    if(collection_list.indexOf(req.params.coll) < 0){
+        console.error('No collection found');
+        common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
+        return;
+    }
+    res.render('coll-new', {
+        conn_name: req.params.conn,
+        conn_list: common.order_object(connection_list),
+        coll_name: req.params.coll,
+        sidebar_list: sidebar_list,
+        db_name: req.params.db,
+        helpers: req.handlebars.helpers,
+        editor: true,
+        session: req.session
     });
 });
 
 // Shows the document preview/pagination
-router.get('/app/:conn/:db/:coll/:id', function (req, res, next){
+router.get('/app/:conn/:db/:coll/:id', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
     const docs_per_page = 5;
 
@@ -368,41 +351,38 @@ router.get('/app/:conn/:db/:coll/:id', function (req, res, next){
     }
 
     // Get DB's form pool
-    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
 
     // do DB stuff
-    mongo_db.listCollections().toArray(function (err, collection_list){
-        // clean up the collection list
-        collection_list = common.cleanCollections(collection_list);
-        common.get_sidebar_list(mongo_db, req.params.db, function (err, sidebar_list){
-            mongo_db.db(req.params.db).collection(req.params.coll).count(function (err, coll_count){
-                if(collection_list.indexOf(req.params.coll) === -1){
-                    common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
-                }else{
-                    res.render('doc-view', {
-                        conn_list: common.order_object(req.nconf.connections.get('connections')),
-                        conn_name: req.params.conn,
-                        db_name: req.params.db,
-                        coll_name: req.params.coll,
-                        coll_count: coll_count,
-                        doc_id: req.params.id,
-                        key_val: req.params.key_val,
-                        value_val: req.params.value_val,
-                        sidebar_list: sidebar_list,
-                        docs_per_page: docs_per_page,
-                        helpers: req.handlebars.helpers,
-                        paginate: true,
-                        editor: true,
-                        session: req.session
-                    });
-                }
-            });
-        });
+    // clean up the collection list
+    const collection_list = common.cleanCollections(await mongo_db.db(req.params.db).listCollections().toArray());
+    const sidebar_list = common.get_sidebar_list(mongo_db, req.params.db);
+    const coll_count = await mongo_db.db(req.params.db).collection(req.params.coll).count();
+    if(collection_list.indexOf(req.params.coll) < 0){
+        common.render_error(res, req, 'Database or Collection does not exist', req.params.conn);
+        return;
+    }
+
+    res.render('doc-view', {
+        conn_list: common.order_object(req.nconf.connections.get('connections')),
+        conn_name: req.params.conn,
+        db_name: req.params.db,
+        coll_name: req.params.coll,
+        coll_count: coll_count,
+        doc_id: req.params.id,
+        key_val: req.params.key_val,
+        value_val: req.params.value_val,
+        sidebar_list: sidebar_list,
+        docs_per_page: docs_per_page,
+        helpers: req.handlebars.helpers,
+        paginate: true,
+        editor: true,
+        session: req.session
     });
 });
 
 // Shows document editor
-router.get('/app/:conn/:db/:coll/edit/:doc_id', function (req, res, next){
+router.get('/app/:conn/:db/:coll/edit/:doc_id', async function (req, res){
     const connection_list = req.app.locals.dbConnections;
     const bsonify = require('./bsonify');
 
@@ -419,64 +399,57 @@ router.get('/app/:conn/:db/:coll/edit/:doc_id', function (req, res, next){
     }
 
     // Get DB's form pool
-    const mongo_db = connection_list[req.params.conn].native.db(req.params.db);
+    const mongo_db = connection_list[req.params.conn].native;/* .db(req.params.db); */
 
     // do DB stuff
-    common.get_sidebar_list(mongo_db, req.params.db, function(err, sidebar_list){
-        common.get_id_type(mongo_db, req.params.coll, req.params.doc_id, function (err, result){
-            if(result.doc === undefined){
-                console.error('No document found');
-                common.render_error(res, req, req.i18n.__('Document not found'), req.params.conn);
-                return;
+    const sidebar_list = await common.get_sidebar_list(mongo_db, req.params.db);
+    const result = await common.get_id_type(mongo_db, req.params.coll, req.params.doc_id);
+    if(result.doc === undefined){
+        console.error('No document found');
+        common.render_error(res, req, req.i18n.__('Document not found'), req.params.conn);
+        return;
+    }
+
+    const images = [];
+    _.forOwn(result.doc, function (value, key){
+        if(value){
+            if(value.toString().substring(0, 10) === 'data:image'){
+                images.push({field: key, src: value});
             }
-            if(err){
-                console.error('No document found');
-                common.render_error(res, req, req.i18n.__('Document not found'), req.params.conn);
-                return;
+        }
+    });
+
+    const videos = [];
+    _.forOwn(result.doc, function (value, key){
+        if(value){
+            if(value.toString().substring(0, 10) === 'data:video'){
+                videos.push({field: key, src: value, type: value.split(';')[0].replace('data:', '')});
             }
+        }
+    });
 
-            const images = [];
-            _.forOwn(result.doc, function (value, key){
-                if(value){
-                    if(value.toString().substring(0, 10) === 'data:image'){
-                        images.push({field: key, src: value});
-                    }
-                }
-            });
+    const audio = [];
+    _.forOwn(result.doc, function (value, key){
+        if(value){
+            if(value.toString().substring(0, 10) === 'data:audio'){
+                audio.push({field: key, src: value});
+            }
+        }
+    });
 
-            const videos = [];
-            _.forOwn(result.doc, function (value, key){
-                if(value){
-                    if(value.toString().substring(0, 10) === 'data:video'){
-                        videos.push({field: key, src: value, type: value.split(';')[0].replace('data:', '')});
-                    }
-                }
-            });
-
-            const audio = [];
-            _.forOwn(result.doc, function (value, key){
-                if(value){
-                    if(value.toString().substring(0, 10) === 'data:audio'){
-                        audio.push({field: key, src: value});
-                    }
-                }
-            });
-
-            res.render('coll-edit', {
-                conn_name: req.params.conn,
-                db_name: req.params.db,
-                conn_list: common.order_object(req.nconf.connections.get('connections')),
-                sidebar_list: sidebar_list,
-                coll_name: req.params.coll,
-                coll_doc: bsonify.stringify(result.doc, null, '    '),
-                helpers: req.handlebars.helpers,
-                editor: true,
-                images_fields: images,
-                video_fields: videos,
-                audio_fields: audio,
-                session: req.session
-            });
-        });
+    res.render('coll-edit', {
+        conn_name: req.params.conn,
+        db_name: req.params.db,
+        conn_list: common.order_object(req.nconf.connections.get('connections')),
+        sidebar_list: sidebar_list,
+        coll_name: req.params.coll,
+        coll_doc: bsonify.stringify(result.doc, null, '    '),
+        helpers: req.handlebars.helpers,
+        editor: true,
+        images_fields: images,
+        video_fields: videos,
+        audio_fields: audio,
+        session: req.session
     });
 });
 
